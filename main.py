@@ -92,7 +92,7 @@ def generate_report():
                            time="91",
                            date="31/01/2023")
 
-    with open('html_report_jinja.html', 'w') as f:
+    with open(ui.fieldRef.text()+".html", 'w') as f:
         f.write(html)
 
 
