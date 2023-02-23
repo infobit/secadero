@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from base64 import b64encode
+from io import BytesIO
 
 # Form implementation generated from reading ui file 'main.ui'
 #
@@ -14,6 +16,9 @@ import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
 from jinja2 import Environment, FileSystemLoader
+import base64
+import numpy as np
+import pdfkit
 
 
 class TableModel(QtCore.QAbstractTableModel):
@@ -48,29 +53,92 @@ def dialog():
         ui.lineEdit.setText(file)
         # Abrir archivo e imprimir tabla
         excel_data = pd.read_excel(file)
+        excel_data['Fecha'] = pd.to_datetime(excel_data['Fecha'])
+
         # Read the values of the file in the dataframe
         data = pd.DataFrame(excel_data)
         model = TableModel(data)
         ui.tableView.setModel(model)
         ui.dataframe = data
-        print(dataframe)
+        ui.dataframe['Fecha'] = ui.dataframe['Fecha'].dt.strftime('%d/%m/%Y')
 
+        ui.dataframe.rename(columns={'16-bit Unsigned': 'sonda1',
+                                     '16-bit Unsigned.1': 'sonda2',
+                                     '16-bit Unsigned.2': 'sonda3',
+                                     '16-bit Unsigned.3': 'aire',
+                                     '16-bit Unsigned.4': 'Min',
+                                    '16-bit Unsigned.6': 'Est'
+        }, inplace=True)
+        ui.dataframe.drop(columns=['Milisegundo','16-bit Unsigned.5','16-bit Unsigned.7'],inplace=True)
 
-def plot():
-    ui.dataframe['16-bit Unsigned.1'] = ui.dataframe['16-bit Unsigned.1'] / 10
+def build_Plot():
+    """ui.dataframe['16-bit Unsigned.1'] = ui.dataframe['16-bit Unsigned.1'] / 10
     ui.dataframe['16-bit Unsigned.2'] = ui.dataframe['16-bit Unsigned.2'] / 10
     ui.dataframe['16-bit Unsigned'] = ui.dataframe['16-bit Unsigned'] / 10
 
-    model = TableModel(ui.dataframe)
-    ui.tableView.setModel(model)
-    # print(ui.dataframe)
     lines = ui.dataframe.plot.line(x='Hora', y=['16-bit Unsigned', '16-bit Unsigned.1', '16-bit Unsigned.2',
                                                 '16-bit Unsigned.3', ])
-    plt.show()
+    image = BytesIO()
+    plt.savefig(image, format='png')
+
 
     ui.dataframe['16-bit Unsigned.1'] = ui.dataframe['16-bit Unsigned.1'] * 10
     ui.dataframe['16-bit Unsigned.2'] = ui.dataframe['16-bit Unsigned.2'] * 10
-    ui.dataframe['16-bit Unsigned'] = ui.dataframe['16-bit Unsigned'] * 10
+    ui.dataframe['16-bit Unsigned'] = ui.dataframe['16-bit Unsigned'] * 10"""
+
+    ui.dataframe['sonda1'] = ui.dataframe['sonda1'] / 10
+    ui.dataframe['sonda2'] = ui.dataframe['sonda2'] / 10
+    ui.dataframe['sonda3'] = ui.dataframe['sonda3'] / 10
+
+    lines = ui.dataframe.plot.line(x='Hora', y=['sonda1', 'sonda2', 'sonda3', 'aire'])
+    plt.grid()
+    image = BytesIO()
+    plt.savefig(image, format='png')
+
+    ui.dataframe['sonda1'] = ui.dataframe['sonda1'] * 10
+    ui.dataframe['sonda2'] = ui.dataframe['sonda2'] * 10
+    ui.dataframe['sonda3'] = ui.dataframe['sonda3'] * 10
+
+    return base64.b64encode(image.getvalue()).decode()
+
+
+def build_plot_table():
+
+    df = ui.dataframe.tail(20)
+    print(df)
+    #define figure and axes
+    fig, ax = plt.subplots()
+    #hide the axes
+    fig.patch.set_visible(False)
+    ax.axis('off')
+    ax.axis('tight')
+    # create table
+    table = plt.table(cellText=df.values, colLabels=df.keys(), loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    fig.tight_layout()
+    #plt.show()
+
+    image = BytesIO()
+    plt.savefig(image, format='png')
+
+    return base64.b64encode(image.getvalue()).decode()
+
+def plot():
+    ui.dataframe['sonda1'] = ui.dataframe['sonda1'] / 10
+    ui.dataframe['sonda2'] = ui.dataframe['sonda2'] / 10
+    ui.dataframe['sonda3'] = ui.dataframe['sonda3'] / 10
+
+    lines = ui.dataframe.plot.line(x='Hora', y=['sonda1', 'sonda2', 'sonda3', 'aire' ])
+    x = ui.dataframe['Hora']
+    #plt.xticks(np.arange(min(x), max(x) + 1, 1.0))
+    plt.yticks(np.arange(min(ui.dataframe['aire']), max(ui.dataframe['aire']) + 1, 5.0))
+    plt.grid()
+    #plt.show()
+
+    ui.dataframe['sonda1'] = ui.dataframe['sonda1'] * 10
+    ui.dataframe['sonda2'] = ui.dataframe['sonda2'] * 10
+    ui.dataframe['sonda3'] = ui.dataframe['sonda3'] * 10
 
 
 def change_date():
@@ -81,19 +149,29 @@ def change_date():
 
 
 def generate_report():
+    url = build_Plot()
+    table = build_plot_table()
+
     env = Environment(loader=FileSystemLoader('templates'))
     template = env.get_template('template.html')
-    html = template.render(secada="30/23",
-                           ref='referencia ',
-                           field1='producto',
-                           field2='producto2',
-                           camara='2',
-                           temp="57",
-                           time="91",
-                           date="31/01/2023")
+    date = ui.dateTimeEdit.dateTime().toPyDateTime()
 
-    with open(ui.fieldRef.text()+".html", 'w') as f:
+    html = template.render(secada="30/23",
+                           ref=ui.fieldRef.text(),
+                           field1=ui.lineEdit_4.text(),
+                           field2=ui.lineEdit_5.text(),
+                           camara=ui.lineEdit_2.text(),
+                           temp=ui.lineEdit_6.text(),
+                           time=ui.lineEdit_3.text(),
+                           date=date.strftime('%d/%m/%Y'),
+                           url=url,
+                           table=table)
+
+
+    with open(ui.fieldRef.text() + ".html", 'w') as f:
         f.write(html)
+    f.close()
+    #pdfkit.from_file(ui.fieldRef.text() + ".html", ui.fieldRef.text()+'.pdf')
 
 
 class Ui_MainWindow(object):
@@ -235,7 +313,7 @@ if __name__ == "__main__":
     ui.setupUi(MainWindow)
     ui.btnOpenFile.clicked.connect(dialog)
     ui.pushButton.clicked.connect(change_date)
-    ui.pushButton_2.clicked.connect(plot)
+    ui.pushButton_2.clicked.connect(build_plot_table)
     ui.pushButton_3.clicked.connect(generate_report)
     ui.dateTimeEdit.setDateTime(now)
     MainWindow.show()
